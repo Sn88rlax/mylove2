@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Один и тот же день</title>
+
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital@0;1&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- Чёрный fade -->
+  <div class="fade"></div>
+
+  <!-- Чёрные полосы -->
+  <div class="letterbox top"></div>
+  <div class="letterbox bottom"></div>
+
+  <!-- Слои плёнки -->
+  <div class="film-frame"></div>
+  <div class="grain"></div>
+  <div class="flicker"></div>
+  <div class="scratches"></div>
+  <div class="dust"></div>
+  <div class="film-burn"></div>
+
+  <main>
+    <header class="hud">
+      <div class="day" id="dayTitle"></div>
+      <div class="meta" id="dayMeta"></div>
+    </header>
+
+    <nav class="timeline" id="timeline" aria-label="Дни"></nav>
+
+    <section class="story" id="storyScroll">
+      <div class="text" id="storyText"></div>
+      <div class="choice" id="choiceBox" aria-live="polite"></div>
+    </section>
+
+    <footer class="nav">
+      <button class="navBtn" id="prevDay" type="button" aria-label="Предыдущий день">←</button>
+      <button class="navBtn" id="nextDay" type="button" aria-label="Следующий день">→</button>
+    </footer>
+  </main>
+
+  <!-- Щелчок проектора -->
+  <audio id="projector" preload="auto">
+    <source src="projector.mp3" type="audio/mpeg">
+  </audio>
+
+  <script src="script.js"></script>
+</body>
+</html>
