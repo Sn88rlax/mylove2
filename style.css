@@ -64,6 +64,32 @@ main {
   gap: 14px;
 }
 
+/* Всё внутри "кадра" плёнки */
+main::before {
+  content: "";
+  position: absolute;
+  inset: -10px;
+  pointer-events: none;
+  border-radius: 18px;
+  border: 1px solid rgba(10,10,10,0.22);
+  box-shadow:
+    0 14px 50px rgba(0,0,0,0.22),
+    inset 0 0 0 1px rgba(255,255,255,0.16);
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.12), rgba(255,255,255,0.05));
+  z-index: -1;
+}
+
+main::after {
+  content: "";
+  position: absolute;
+  inset: -22px;
+  pointer-events: none;
+  border-radius: 26px;
+  background: radial-gradient(ellipse at center, rgba(0,0,0,0) 35%, rgba(0,0,0,0.25) 100%);
+  z-index: -2;
+}
+
 /* HUD */
 .hud {
   display: flex;
@@ -80,37 +106,7 @@ main {
   text-align: right;
 }
 
-/* Таймлайн дней */
-.timeline {
-  display: flex;
-  gap: 8px;
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
-  padding: 2px 2px 8px;
-  margin: 0;
-}
-
-.timeline::-webkit-scrollbar { height: 6px; }
-.timeline::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.12); border-radius: 8px; }
-
-.dayPill {
-  flex: 0 0 auto;
-  border: 1px solid rgba(20,20,20,0.16);
-  background: rgba(255,255,255,0.28);
-  color: #2a2a2a;
-  font-family: inherit;
-  font-size: 12px;
-  letter-spacing: 0.08em;
-  padding: 8px 10px;
-  border-radius: 999px;
-  cursor: pointer;
-  transition: transform 140ms ease, background 140ms ease, border-color 140ms ease, opacity 140ms ease;
-}
-
-.dayPill:hover { transform: translateY(-1px); background: rgba(255,255,255,0.42); }
-.dayPill[aria-current="true"] { border-color: rgba(20,20,20,0.35); background: rgba(255,255,255,0.55); }
-.dayPill:disabled { opacity: 0.35; cursor: default; transform: none; }
-
+/* (таймлайн убран — листание только свайпами) */
 /* День */
 .day {
   font-size: 12px;
@@ -340,8 +336,8 @@ main {
 .choiceBtn {
   position: relative;
   overflow: hidden;
-  border: 1px solid rgba(20,20,20,0.18);
-  background: rgba(255,255,255,0.42);
+  border: 1px solid rgba(30,25,20,0.14);
+  background: rgba(245,238,228,0.32);
   color: #2a2a2a;
   font-family: inherit;
   font-size: 15px;
@@ -351,7 +347,7 @@ main {
   text-align: left;
   cursor: pointer;
   backdrop-filter: blur(2px);
-  transition: transform 160ms ease, background 160ms ease, border-color 160ms ease;
+  transition: transform 160ms ease, background 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
 }
 
 .choiceBtn::after {
@@ -395,12 +391,13 @@ main {
 
 .choiceBtn:hover {
   transform: translateY(-1px);
-  background: rgba(255,255,255,0.55);
+  background: rgba(245,238,228,0.42);
+  box-shadow: 0 10px 22px rgba(0,0,0,0.08);
 }
 
 .choiceBtn[aria-pressed="true"] {
-  border-color: rgba(20,20,20,0.35);
-  background: rgba(255,255,255,0.62);
+  border-color: rgba(30,25,20,0.28);
+  background: rgba(245,238,228,0.48);
 }
 
 .choiceHint {
@@ -410,27 +407,58 @@ main {
   opacity: 0.95;
 }
 
-/* Навигация */
-.nav {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 10px;
-  padding-bottom: 10px;
+/* (кнопки навигации убраны — листание свайпами) */
+
+/* Текст последствий выбора */
+.afterText {
+  margin-top: 14px;
+  font-size: 16px;
+  line-height: 1.75;
+  white-space: pre-wrap;
+  color: rgba(42,42,42,0.92);
+  text-shadow:
+    0.25px 0 rgba(0,0,0,0.08),
+   -0.25px 0 rgba(255,255,255,0.05);
+  animation: afterAppear 380ms ease-out;
 }
 
-.navBtn {
-  width: 44px;
-  height: 44px;
-  border-radius: 999px;
-  border: 1px solid rgba(20,20,20,0.18);
-  background: rgba(255,255,255,0.35);
-  cursor: pointer;
-  font-size: 18px;
-  line-height: 1;
-  transition: transform 160ms ease, background 160ms ease;
+@keyframes afterAppear {
+  0% { opacity: 0; transform: translateY(6px); }
+  100% { opacity: 1; transform: translateY(0); }
 }
 
-.navBtn:hover { transform: translateY(-1px); background: rgba(255,255,255,0.5); }
-.navBtn:disabled { opacity: 0.35; cursor: default; transform: none; }
+/* Перелистывание кадра */
+.flip {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9;
+  opacity: 0;
+  background:
+    linear-gradient(90deg,
+      rgba(0,0,0,0.0),
+      rgba(0,0,0,0.18),
+      rgba(255,210,140,0.10),
+      rgba(0,0,0,0.22),
+      rgba(0,0,0,0.0)
+    );
+  mix-blend-mode: multiply;
+}
+
+.flip.flipLeft { animation: flipLeft 520ms ease-out; }
+.flip.flipRight { animation: flipRight 520ms ease-out; }
+
+@keyframes flipLeft {
+  0% { opacity: 0; transform: translateX(35%); filter: blur(0); }
+  20% { opacity: 0.55; }
+  60% { opacity: 0.35; filter: blur(0.6px); }
+  100% { opacity: 0; transform: translateX(-35%); filter: blur(0); }
+}
+
+@keyframes flipRight {
+  0% { opacity: 0; transform: translateX(-35%); filter: blur(0); }
+  20% { opacity: 0.55; }
+  60% { opacity: 0.35; filter: blur(0.6px); }
+  100% { opacity: 0; transform: translateX(35%); filter: blur(0); }
+}
 

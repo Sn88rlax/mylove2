@@ -1,6 +1,7 @@
 const MAX_DAYS = 10;
 
-const STORAGE_KEY = "escapeForLove:v2";
+const STORAGE_KEY = "escapeForLove:v3";
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 let viewingDay = 1;
 let revealTimeout = null;
@@ -11,14 +12,15 @@ let activeRevealToken = 0;
 function loadState() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return { unlockedDay: 1, choices: {}, stats: { trust: 0, courage: 0, surrender: 0 } };
+    if (!raw) return { choices: {}, completedAt: {}, deltas: {} };
     const parsed = JSON.parse(raw);
-    if (!parsed || typeof parsed !== "object") return { unlockedDay: 1, choices: {}, stats: { trust: 0, courage: 0, surrender: 0 } };
-    if (typeof parsed.unlockedDay !== "number") parsed.unlockedDay = 1;
+    if (!parsed || typeof parsed !== "object") return { choices: {}, completedAt: {}, deltas: {} };
     if (!parsed.choices || typeof parsed.choices !== "object") parsed.choices = {};
+    if (!parsed.completedAt || typeof parsed.completedAt !== "object") parsed.completedAt = {};
+    if (!parsed.deltas || typeof parsed.deltas !== "object") parsed.deltas = {};
     return parsed;
   } catch {
-    return { unlockedDay: 1, choices: {}, stats: { trust: 0, courage: 0, surrender: 0 } };
+    return { choices: {}, completedAt: {}, deltas: {} };
   }
 }
 
@@ -28,17 +30,13 @@ function saveState(state) {
   } catch {}
 }
 
-function recomputeStats(state) {
-  const stats = { trust: 0, courage: 0, surrender: 0 };
+function recomputeStatsAB(state) {
+  const stats = { A: 0, B: 0 };
   for (let d = 1; d <= MAX_DAYS; d++) {
-    const c = state.choices?.[String(d)];
-    if (c === "A") {
-      stats.trust += 1;
-      stats.courage += 1;
-    } else if (c === "B") {
-      stats.surrender += 1;
-      stats.trust += 1;
-    }
+    const delta = state.deltas?.[String(d)];
+    if (!delta) continue;
+    stats.A += Number(delta.A || 0);
+    stats.B += Number(delta.B || 0);
   }
   state.stats = stats;
   return state;
@@ -51,10 +49,8 @@ const meta = document.getElementById("dayMeta");
 const textEl = document.getElementById("storyText");
 const choiceBox = document.getElementById("choiceBox");
 const storyScroll = document.getElementById("storyScroll");
-const prevBtn = document.getElementById("prevDay");
-const nextBtn = document.getElementById("nextDay");
-const timeline = document.getElementById("timeline");
 const filmBurn = document.querySelector(".film-burn");
+const flip = document.getElementById("flip");
 
 function clearReveal() {
   if (revealTimeout) {
@@ -76,12 +72,6 @@ async function loadDayData(day) {
 
 function matchesWhen(when, state) {
   if (!when) return true;
-  const choices = when.choices;
-  if (choices && typeof choices === "object") {
-    for (const [k, v] of Object.entries(choices)) {
-      if (state.choices?.[String(k)] !== v) return false;
-    }
-  }
   const minStats = when.minStats;
   if (minStats && typeof minStats === "object") {
     for (const [k, v] of Object.entries(minStats)) {
@@ -97,20 +87,38 @@ function matchesWhen(when, state) {
   return true;
 }
 
-function selectVariantText(dayData, state) {
+function selectFinalVariantText(dayData, state) {
   const variants = Array.isArray(dayData?.variants) ? dayData.variants : [];
   for (const v of variants) {
     if (matchesWhen(v.when, state) && typeof v.text === "string") return v.text;
   }
-  if (typeof dayData?.text === "string") return dayData.text;
-  return "";
+  return typeof dayData?.text === "string" ? dayData.text : "";
 }
 
-function setNavDisabled() {
-  const state = recomputeStats(loadState());
-  const unlocked = Math.min(Math.max(state.unlockedDay || 1, 1), MAX_DAYS);
-  prevBtn.disabled = viewingDay <= 1;
-  nextBtn.disabled = viewingDay >= unlocked;
+function getUnlockedDay(state, nowMs = Date.now()) {
+  // День 1 всегда доступен. Следующий открывается строго через 24ч после выбора в текущем.
+  let unlocked = 1;
+  for (let d = 1; d < MAX_DAYS; d++) {
+    const key = String(d);
+    const choice = state.choices?.[key];
+    const t = Number(state.completedAt?.[key] || 0);
+    if (!choice || !t) break;
+    if (nowMs - t >= DAY_MS) unlocked = d + 1;
+    else break;
+  }
+  return Math.min(Math.max(unlocked, 1), MAX_DAYS);
+}
+
+function msToUnlockNext(state, nowMs = Date.now()) {
+  const unlocked = getUnlockedDay(state, nowMs);
+  const key = String(unlocked);
+  // если текущий (unlocked) еще не выбран — до следующего дня таймер не идёт
+  if (state.choices?.[key]) {
+    const t = Number(state.completedAt?.[key] || 0);
+    if (!t) return null;
+    return Math.max(0, DAY_MS - (nowMs - t));
+  }
+  return null;
 }
 
 function kickFrameJump() {
@@ -119,27 +127,6 @@ function kickFrameJump() {
   void filmBurn?.offsetHeight;
   filmBurn?.classList.add("pulse");
   setTimeout(() => document.body.classList.remove("jump"), 90);
-}
-
-function renderTimeline(unlocked, state) {
-  timeline.innerHTML = "";
-  for (let d = 1; d <= MAX_DAYS; d++) {
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = "dayPill";
-    btn.textContent = `Д${d}`;
-    btn.disabled = d > unlocked;
-    btn.setAttribute("aria-current", d === viewingDay ? "true" : "false");
-    const chosen = state.choices?.[String(d)];
-    if (chosen) btn.title = `Выбор: ${chosen}`;
-    btn.addEventListener("click", () => {
-      if (d <= unlocked) {
-        viewingDay = d;
-        playDay(viewingDay);
-      }
-    });
-    timeline.appendChild(btn);
-  }
 }
 
 function showChoices() {
@@ -173,31 +160,30 @@ function renderChoices(day, dayData, state, unlocked) {
     btn.type = "button";
     btn.className = "choiceBtn";
     btn.textContent = cfg.label;
-    btn.disabled = locked;
+    btn.disabled = locked || Boolean(chosen);
     btn.setAttribute("aria-pressed", chosen === key ? "true" : "false");
     btn.addEventListener("click", () => {
       if (locked || !revealDone) return;
+      if (state.choices?.[String(day)]) return; // фиксируем выбор навсегда
 
       // визуальная реакция на выбор
       btn.classList.add("burning");
       const other = row.querySelectorAll(".choiceBtn");
       other.forEach((b) => { if (b !== btn) b.disabled = true; });
 
-      const st = recomputeStats(loadState());
+      const st = recomputeStatsAB(loadState());
       st.choices[String(day)] = key;
-      st.unlockedDay = Math.min(Math.max(st.unlockedDay || 1, 1), MAX_DAYS);
-      if (day === st.unlockedDay && day < MAX_DAYS) st.unlockedDay = day + 1;
-      recomputeStats(st);
+      st.completedAt[String(day)] = Date.now();
+      const eff = cfg.effects && typeof cfg.effects === "object" ? cfg.effects : { A: 0, B: 0 };
+      st.deltas[String(day)] = { A: Number(eff.A || 0), B: Number(eff.B || 0) };
+      recomputeStatsAB(st);
       saveState(st);
 
       kickFrameJump();
 
       setTimeout(() => {
-        // после выбора автоматически открываем следующий день (если он открылся)
-        const unlockedNow = Math.min(Math.max(st.unlockedDay || 1, 1), MAX_DAYS);
-        viewingDay = Math.min(Math.max(viewingDay, 1), unlockedNow);
-        if (day < unlockedNow) viewingDay = day + 1;
-        playDay(viewingDay);
+        // остаёмся на этом дне — ниже покажем "последствие выбора"
+        playDay(day);
       }, 520);
     });
     return btn;
@@ -210,16 +196,26 @@ function renderChoices(day, dayData, state, unlocked) {
 
   const hint = document.createElement("div");
   hint.className = "choiceHint";
+  choiceBox.appendChild(row);
+
   if (locked) {
-    hint.textContent = "Этот день ещё не наступил.";
-  } else if (chosen) {
-    hint.textContent = "Выбор сохранён. Он повлияет на следующий день и финал.";
-  } else {
-    hint.textContent = "Выберите, как поступить (2 варианта).";
+    const st = recomputeStatsAB(loadState());
+    const unlockedNow = getUnlockedDay(st);
+    const ms = msToUnlockNext(st);
+    hint.textContent = unlockedNow >= day ? "" : (ms == null ? "" : `Следующий день откроется через ${Math.ceil(ms / 3600000)} ч.`);
+    if (hint.textContent) choiceBox.appendChild(hint);
   }
 
-  choiceBox.appendChild(row);
-  choiceBox.appendChild(hint);
+  // текст последствий выбора
+  if (chosen) {
+    const after = dayData?.choices?.[chosen]?.afterText;
+    if (typeof after === "string" && after.trim().length) {
+      const afterEl = document.createElement("div");
+      afterEl.className = "afterText";
+      afterEl.textContent = after;
+      choiceBox.appendChild(afterEl);
+    }
+  }
 }
 
 async function playDay(day) {
@@ -236,8 +232,8 @@ async function playDay(day) {
   projector.currentTime = 0;
   projector.play().catch(()=>{});
 
-  const state = recomputeStats(loadState());
-  const unlocked = Math.min(Math.max(state.unlockedDay || 1, 1), MAX_DAYS);
+  const state = recomputeStatsAB(loadState());
+  const unlocked = getUnlockedDay(state);
   if (day > unlocked) day = unlocked;
   viewingDay = day;
 
@@ -246,15 +242,15 @@ async function playDay(day) {
     variants: [{ text: "Не удалось загрузить текст дня. На Vercel всё будет ок — локально это работает только через сервер (не file://)." }],
     choices: null
   }));
-  const text = selectVariantText(dayData, state);
+  const preText = typeof dayData?.text === "string" ? dayData.text : "";
+  const finalText = day === 10 ? selectFinalVariantText(dayData, state) : "";
+  const text = day === 10 ? finalText : preText;
 
   title.textContent = `День ${day}`;
-  meta.textContent = day > unlocked ? "закрыто" : (state.choices?.[String(day)] ? "выбор сделан" : "в ожидании выбора");
+  meta.textContent = ""; // без надписей
   textEl.textContent = "";
   storyScroll.scrollTop = 0;
   hideChoices();
-  renderTimeline(unlocked, state);
-  setNavDisabled();
 
   let i = 0;
 
@@ -307,12 +303,18 @@ nextBtn.addEventListener("click", () => {
   }
 });
 
-// стартуем с последнего открытого дня, чтобы можно было "вспоминать"
+function playFlip(direction) {
+  if (!flip) return;
+  flip.classList.remove("flipLeft", "flipRight");
+  void flip.offsetHeight;
+  flip.classList.add(direction === "left" ? "flipLeft" : "flipRight");
+}
+
+// стартуем с последнего ДОСТУПНОГО дня, чтобы можно было "вспоминать"
 {
-  const st = recomputeStats(loadState());
-  st.unlockedDay = Math.min(Math.max(st.unlockedDay || 1, 1), MAX_DAYS);
+  const st = recomputeStatsAB(loadState());
   saveState(st);
-  viewingDay = st.unlockedDay;
+  viewingDay = getUnlockedDay(st);
   playDay(viewingDay);
 }
 
@@ -340,13 +342,15 @@ document.addEventListener("touchend", e => {
   const diff = e.changedTouches[0].clientX - startX;
   if (diff > 60 && viewingDay > 1) {
     viewingDay--;
+    playFlip("right");
     playDay(viewingDay);
   }
   if (diff < -60) {
-    const state = recomputeStats(loadState());
-    const unlocked = Math.min(Math.max(state.unlockedDay || 1, 1), MAX_DAYS);
+    const state = recomputeStatsAB(loadState());
+    const unlocked = getUnlockedDay(state);
     if (viewingDay < unlocked) {
       viewingDay++;
+      playFlip("left");
       playDay(viewingDay);
     }
   }
@@ -369,14 +373,16 @@ document.addEventListener("mouseup", e => {
 
   if (diff > 80 && viewingDay > 1) {
     viewingDay--;
+    playFlip("right");
     playDay(viewingDay);
   }
 
   if (diff < -80) {
-    const state = recomputeStats(loadState());
-    const unlocked = Math.min(Math.max(state.unlockedDay || 1, 1), MAX_DAYS);
+    const state = recomputeStatsAB(loadState());
+    const unlocked = getUnlockedDay(state);
     if (viewingDay < unlocked) {
       viewingDay++;
+      playFlip("left");
       playDay(viewingDay);
     }
   }
