@@ -239,7 +239,12 @@ async function playDay(day) {
 
   const dayData = await loadDayData(day).catch(() => ({
     day,
-    variants: [{ text: "Не удалось загрузить текст дня. На Vercel всё будет ок — локально это работает только через сервер (не file://)." }],
+    text: "Не удалось загрузить текст дня.\n\nЕсли ты открыл страницу двойным кликом (file://), браузер блокирует fetch к JSON.\nНа Vercel всё будет работать.\nЛокально открой через любой сервер.",
+    variants: [
+      {
+        text: "Не удалось загрузить текст дня.\n\nЕсли ты открыл страницу двойным кликом (file://), браузер блокирует fetch к JSON.\nНа Vercel всё будет работать.\nЛокально открой через любой сервер."
+      }
+    ],
     choices: null
   }));
   const preText = typeof dayData?.text === "string" ? dayData.text : "";
